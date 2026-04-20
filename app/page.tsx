@@ -222,10 +222,23 @@ export default function Home() {
       await loadIncoming(loggedUser.id);
       await loadFriends(loggedUser.id);
     };
-    // Read ?share= param from URL
+    // Read URL params
     const params = new URLSearchParams(window.location.search);
     const h = params.get("share");
     if (h) setShareHandle(h);
+
+    // Show a friendly message if Supabase redirected here with an auth error
+    const authError = params.get("error_code") ?? params.get("error");
+    if (authError) {
+      const desc = params.get("error_description")?.replace(/\+/g, " ") ?? authError;
+      if (authError === "otp_expired") {
+        setInfo("Magic link expired — please request a new one below.");
+      } else {
+        setInfo(`Sign-in error: ${desc}`);
+      }
+      // Clean the error params from the URL so they don't persist on reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
 
     void boot();
   }, [loadCoverage, loadFriends, loadIncoming, supabase]);
@@ -632,7 +645,11 @@ export default function Home() {
           <button className={`${BTN_PRIMARY} w-full py-3`} onClick={sendMagicLink}>
             Continue with magic link →
           </button>
-          {info ? <p className="text-xs text-slate-500">{info}</p> : null}
+          {info ? (
+            <p className={`text-xs ${info.includes("expired") || info.includes("error") ? "rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-amber-300" : "text-slate-500"}`}>
+              {info}
+            </p>
+          ) : null}
           {shareHandle ? (
             <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
               Sign in to view <span className="font-semibold">@{shareHandle}</span>'s travel map.
