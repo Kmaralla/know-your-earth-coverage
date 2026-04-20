@@ -107,12 +107,14 @@ export default function Home() {
   const [incoming, setIncoming] = useState<IncomingRequest[]>([]);
   const [showDemoRequest, setShowDemoRequest] = useState(false);
   const [shareHandle, setShareHandle] = useState<string | null>(null);
+  const [guestMode, setGuestMode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [listModal, setListModal] = useState<{ title: string; items: string[] } | null>(null);
   const hasDefaultedCountry = useRef(false);
   const [friends, setFriends] = useState<Profile[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
+  const isLoggedIn = Boolean(user);
   const isOwnView = selectedProfile ? selectedProfile.id === user?.id : true;
   const mapLocked = Boolean(selectedProfile && !isOwnView && !canViewSelected);
   const activePlaces = tab === "world" ? worldPlaces : countryPlaces;
@@ -386,7 +388,14 @@ export default function Home() {
   // ── Auth ──────────────────────────────────────────────────────────
 
   async function sendMagicLink() {
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+    // Build callback URL, preserving ?share= if present
+    const callbackUrl = new URL("/auth/callback", window.location.origin);
+    const shareParam = new URLSearchParams(window.location.search).get("share");
+    if (shareParam) callbackUrl.searchParams.set("next", `/?share=${shareParam}`);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: callbackUrl.toString() },
+    });
     setInfo(error ? error.message : "Magic link sent — check your inbox.");
   }
 
@@ -595,7 +604,7 @@ export default function Home() {
       ) : null}
 
       {/* ── Sign-in screen ── */}
-      {!user ? (
+      {!user && !guestMode ? (
         <main className="relative mx-auto mt-14 flex w-full max-w-sm flex-col items-center gap-5 rounded-3xl border border-white/8 bg-white/[0.04] p-10 text-center backdrop-blur-xl">
           <div
             className="flex h-16 w-16 items-center justify-center rounded-2xl text-3xl"
@@ -631,10 +640,36 @@ export default function Home() {
           ) : (
             <p className="text-[11px] text-slate-700">No password. No tracking. Just your pins.</p>
           )}
+          <div className="flex w-full items-center gap-3">
+            <div className="h-px flex-1 bg-white/8" />
+            <span className="text-[11px] text-slate-700">or</span>
+            <div className="h-px flex-1 bg-white/8" />
+          </div>
+          <button
+            className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 text-sm text-slate-500 transition-colors hover:bg-white/[0.07] hover:text-slate-300"
+            onClick={() => setGuestMode(true)}
+          >
+            Continue as guest — explore without signing in
+          </button>
         </main>
       ) : (
-        /* ── Main app ── */
-        <main className="relative mx-auto grid w-full max-w-7xl grid-cols-1 items-start gap-4 px-6 pb-10 lg:grid-cols-[280px_minmax(0,1fr)]">
+        /* ── Main app (logged-in OR guest) ── */
+        <main className="relative mx-auto w-full max-w-7xl px-6 pb-10">
+          {/* Guest banner */}
+          {guestMode ? (
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3">
+              <p className="text-xs text-amber-300">
+                <span className="font-semibold">Guest mode</span> — your pins are visible but not saved. Sign in to keep your coverage.
+              </p>
+              <button
+                className="flex-shrink-0 rounded-xl bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/30"
+                onClick={() => setGuestMode(false)}
+              >
+                Sign in
+              </button>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
 
           {/* ── LEFT SIDEBAR ── */}
           <aside className="flex flex-col gap-3">
@@ -719,7 +754,7 @@ export default function Home() {
                           >
                             View profile
                           </button>
-                          {user.id !== p.id ? (
+                          {user?.id !== p.id ? (
                             <button
                               className="flex-1 rounded-lg bg-cyan-700/60 py-1.5 text-xs transition-colors hover:bg-cyan-600"
                               onClick={() => void shareMyMap(p.id)}
@@ -902,9 +937,16 @@ export default function Home() {
                   {selectedProfile && !isOwnView ? (
                     <span className="text-xs text-slate-500">Viewing {selectedProfile.display_name}</span>
                   ) : null}
-                  {isOwnView ? (
+                  {isOwnView && isLoggedIn ? (
                     <button className={BTN_PRIMARY} onClick={saveCoverage}>
                       Save coverage
+                    </button>
+                  ) : isOwnView && guestMode ? (
+                    <button
+                      className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 transition-colors hover:bg-cyan-500/20"
+                      onClick={() => setGuestMode(false)}
+                    >
+                      Sign in to save →
                     </button>
                   ) : null}
                 </div>
@@ -1110,6 +1152,7 @@ export default function Home() {
               </div>
             ) : null}
           </section>
+          </div>{/* end inner grid */}
         </main>
       )}
 
