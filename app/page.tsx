@@ -68,7 +68,7 @@ function Pill({
   );
 }
 
-const CARD = "rounded-2xl border border-white/[0.11] bg-white/[0.07] backdrop-blur-xl";
+const CARD = "rounded-2xl border border-white/[0.13] bg-white/[0.06] backdrop-blur-xl";
 const INPUT =
   "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/60";
 const BTN_GHOST =
@@ -518,39 +518,26 @@ export default function Home() {
   const totalPlaces = worldPlaces.length + allCountryRows.length;
   const worldPct = Math.round(worldPlaces.length / 195 * 100);
   const stateTotal = COUNTRY_STATE_COUNTS[countryCode];
+  const currentCountryName = COUNTRIES.find((c) => c.code === countryCode)?.name ?? countryCode;
 
-  // World tab: % = pins / sum of state counts across every visited country
-  const visitedStateTotals = worldPlaces.reduce(
-    (sum, p) => sum + (COUNTRY_STATE_COUNTS[p.country_code] ?? 0), 0,
-  );
-  const cityPctWorld = visitedStateTotals > 0 && allCountryRows.length > 0
-    ? Math.round((allCountryRows.length / visitedStateTotals) * 100)
-    : null;
-
-  // Country tab: % = pins in current country / total states in that country
+  // Country tab: % of states visited in the currently selected country
   const cityPctCountry = stateTotal && countryPlaces.length > 0
     ? Math.round((countryPlaces.length / stateTotal) * 100)
     : null;
-
-  const cityPct = tab === "country" ? cityPctCountry : cityPctWorld;
-  const cityPctDetail =
-    tab === "country" && stateTotal
-      ? `${countryPlaces.length} / ${stateTotal} states`
-      : visitedStateTotals > 0
-        ? `${allCountryRows.length} / ${visitedStateTotals} states`
-        : null;
+  const cityPctDetail = stateTotal
+    ? `${countryPlaces.length} / ${stateTotal} states`
+    : null;
 
   return (
     <div
       className="min-h-screen text-slate-100"
       style={{
         background:
-          "radial-gradient(ellipse 70% 55% at -8% -10%, rgba(251,146,60,0.32) 0%, transparent 52%)," +
-          "radial-gradient(ellipse 55% 45% at 108% -5%, rgba(14,165,233,0.22) 0%, transparent 50%)," +
-          "radial-gradient(ellipse 80% 50% at 50% 108%, rgba(124,58,237,0.16) 0%, transparent 48%)," +
-          "radial-gradient(ellipse 40% 35% at 88% 58%, rgba(251,191,36,0.09) 0%, transparent 50%)," +
-          "radial-gradient(ellipse 35% 30% at 15% 70%, rgba(20,184,166,0.10) 0%, transparent 50%)," +
-          "#03070f",
+          "radial-gradient(ellipse 60% 50% at -5% -5%, rgba(251,146,60,0.62) 0%, rgba(239,68,68,0.12) 45%, transparent 62%)," +
+          "radial-gradient(ellipse 50% 40% at 105% 0%, rgba(14,165,233,0.50) 0%, rgba(59,130,246,0.10) 45%, transparent 62%)," +
+          "radial-gradient(ellipse 70% 45% at 50% 108%, rgba(124,58,237,0.38) 0%, transparent 55%)," +
+          "radial-gradient(ellipse 35% 30% at 82% 52%, rgba(20,184,166,0.18) 0%, transparent 48%)," +
+          "#050e1f",
       }}
     >
       {/* Top accent stripe */}
@@ -563,8 +550,8 @@ export default function Home() {
         className="pointer-events-none fixed inset-0"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.03) 1px,transparent 1px)," +
-            "linear-gradient(90deg,rgba(255,255,255,0.03) 1px,transparent 1px)",
+            "linear-gradient(rgba(255,255,255,0.05) 1px,transparent 1px)," +
+            "linear-gradient(90deg,rgba(255,255,255,0.05) 1px,transparent 1px)",
           backgroundSize: "80px 80px",
         }}
       />
@@ -929,10 +916,10 @@ export default function Home() {
                   bg: "rgba(6,182,212,0.07)",
                 },
                 {
-                  value: allCountryRows.length,
-                  label: tab === "country" ? "States / cities" : "Cities & regions",
-                  pct: cityPct,
-                  pctDetail: cityPctDetail,
+                  value: tab === "country" ? countryPlaces.length : allCountryRows.length,
+                  label: tab === "country" ? `${currentCountryName} states` : "Cities & regions",
+                  pct: tab === "country" ? cityPctCountry : null,
+                  pctDetail: tab === "country" ? cityPctDetail : null,
                   accentColor: "#fcd34d",
                   items: allCountryRows.map(p => p.place_name),
                   gradient: "linear-gradient(135deg,#fcd34d,#f97316)",
