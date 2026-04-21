@@ -126,3 +126,62 @@ export const COUNTRIES: CountryOption[] = [
   { code: "FJ", name: "Fiji", lat: -16.5782, lng: 179.4144 },
   { code: "NZ", name: "New Zealand", lat: -40.9006, lng: 174.886 },
 ];
+
+/** Approximate number of first-level administrative divisions per country. */
+export const COUNTRY_STATE_COUNTS: Record<string, number> = {
+  AR: 24,  // 23 provinces + CABA
+  AU: 8,   // 6 states + 2 territories
+  AT: 9,   // 9 Bundesländer
+  BE: 3,   // 3 regions
+  BO: 9,   // 9 departments
+  BR: 27,  // 26 states + federal district
+  CA: 13,  // 10 provinces + 3 territories
+  CL: 16,  // 16 regions
+  CN: 34,  // 23 provinces + 4 municipalities + 5 autonomous regions + 2 SARs
+  CO: 33,  // 32 departments + DC
+  CZ: 14,  // 14 regions
+  DE: 16,  // 16 Bundesländer
+  EC: 24,  // 24 provinces
+  EG: 27,  // 27 governorates
+  ES: 17,  // 17 autonomous communities
+  ET: 12,  // 12 regional states
+  FI: 19,  // 19 regions
+  FR: 18,  // 13 metropolitan + 5 overseas regions
+  GB: 4,   // England, Scotland, Wales, N. Ireland
+  GR: 13,  // 13 regions
+  HU: 19,  // 19 counties + Budapest
+  ID: 38,  // 38 provinces
+  IN: 28,  // 28 states
+  IR: 31,  // 31 provinces
+  IT: 20,  // 20 regions
+  JP: 47,  // 47 prefectures
+  KE: 47,  // 47 counties
+  KR: 17,  // 17 administrative divisions
+  MA: 12,  // 12 regions
+  MX: 32,  // 31 states + CDMX
+  MY: 16,  // 13 states + 3 federal territories
+  NG: 37,  // 36 states + FCT
+  NL: 12,  // 12 provinces
+  NO: 15,  // 15 counties
+  NZ: 16,  // 16 regions
+  PE: 25,  // 25 regions
+  PH: 17,  // 17 regions
+  PK: 7,   // 4 provinces + AJK + GB + ICT
+  PL: 16,  // 16 voivodeships
+  PT: 18,  // 18 districts
+  RO: 42,  // 41 counties + Bucharest
+  RU: 85,  // 85 federal subjects
+  SA: 13,  // 13 regions
+  SE: 21,  // 21 counties
+  TH: 77,  // 77 provinces
+  TR: 81,  // 81 provinces
+  TZ: 31,  // 31 regions
+  UA: 25,  // 25 regions
+  UG: 10,  // 10 regions
+  US: 50,  // 50 states
+  VE: 24,  // 23 states + Caracas Capital District
+  VN: 63,  // 63 provinces + municipalities
+  ZA: 9,   // 9 provinces
+  ZM: 10,  // 10 provinces
+  ZW: 10,  // 10 provinces
+};

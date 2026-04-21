@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map, { Marker, type MapRef } from "react-map-gl/maplibre";
 import type { User } from "@supabase/supabase-js";
-import { COUNTRIES } from "@/lib/geo";
+import { COUNTRIES, COUNTRY_STATE_COUNTS } from "@/lib/geo";
 import { reverseGeocode, searchPlaces, type NominatimResult } from "@/lib/nominatim";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile, PlaceEntry } from "@/lib/types";
@@ -72,9 +72,9 @@ const CARD = "rounded-2xl border border-white/[0.11] bg-white/[0.07] backdrop-bl
 const INPUT =
   "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/60";
 const BTN_GHOST =
-  "rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/[0.09] hover:text-white";
+  "rounded-xl border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-slate-300 transition-all duration-150 hover:bg-white/[0.09] hover:text-white active:scale-[0.95] active:bg-white/[0.13] select-none";
 const BTN_PRIMARY =
-  "rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-opacity hover:opacity-90";
+  "rounded-xl bg-gradient-to-r from-cyan-500 to-cyan-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all duration-150 hover:brightness-110 active:scale-[0.95] active:brightness-90 select-none";
 
 // ── Main component ────────────────────────────────────────────────
 
@@ -516,17 +516,23 @@ export default function Home() {
   // ── Render ────────────────────────────────────────────────────────
 
   const totalPlaces = worldPlaces.length + allCountryRows.length;
+  const worldPct = Math.round(worldPlaces.length / 195 * 100);
+  const stateTotal = COUNTRY_STATE_COUNTS[countryCode];
+  const cityPct = tab === "country" && stateTotal && countryPlaces.length > 0
+    ? Math.round(countryPlaces.length / stateTotal * 100)
+    : null;
 
   return (
     <div
       className="min-h-screen text-slate-100"
       style={{
         background:
-          "radial-gradient(ellipse 75% 65% at -5% -5%, rgba(6,182,212,0.22) 0%, transparent 55%)," +
-          "radial-gradient(ellipse 60% 55% at 105% -5%, rgba(139,92,246,0.18) 0%, transparent 52%)," +
-          "radial-gradient(ellipse 85% 55% at 50% 115%, rgba(234,88,12,0.18) 0%, transparent 50%)," +
-          "linear-gradient(rgba(4,6,14,0.88), rgba(4,6,14,0.88))," +
-          "url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1920&q=80') center / cover fixed",
+          "radial-gradient(ellipse 70% 55% at -8% -10%, rgba(251,146,60,0.32) 0%, transparent 52%)," +
+          "radial-gradient(ellipse 55% 45% at 108% -5%, rgba(14,165,233,0.22) 0%, transparent 50%)," +
+          "radial-gradient(ellipse 80% 50% at 50% 108%, rgba(124,58,237,0.16) 0%, transparent 48%)," +
+          "radial-gradient(ellipse 40% 35% at 88% 58%, rgba(251,191,36,0.09) 0%, transparent 50%)," +
+          "radial-gradient(ellipse 35% 30% at 15% 70%, rgba(20,184,166,0.10) 0%, transparent 50%)," +
+          "#03070f",
       }}
     >
       {/* Top accent stripe */}
@@ -892,13 +898,46 @@ export default function Home() {
             {/* Stats row */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { value: worldPlaces.length,   label: "Countries",        items: worldPlaces.map(p => p.place_name),                         gradient: "linear-gradient(135deg,#7dd3fc,#06b6d4)", glow: "rgba(6,182,212,0.55)",    border: "rgba(6,182,212,0.22)",    bg: "rgba(6,182,212,0.07)" },
-                { value: allCountryRows.length, label: "Cities & regions", items: allCountryRows.map(p => p.place_name),                      gradient: "linear-gradient(135deg,#fcd34d,#f97316)", glow: "rgba(249,115,22,0.55)",   border: "rgba(249,115,22,0.22)",   bg: "rgba(249,115,22,0.07)" },
-                { value: totalPlaces,           label: "Total pins",       items: [...worldPlaces, ...allCountryRows].map(p => p.place_name),  gradient: "linear-gradient(135deg,#d8b4fe,#a855f7)", glow: "rgba(168,85,247,0.55)",   border: "rgba(168,85,247,0.22)",   bg: "rgba(168,85,247,0.07)" },
-              ].map(({ value, label, items, gradient, glow, border, bg }) => (
+                {
+                  value: worldPlaces.length,
+                  label: "Countries",
+                  pct: worldPct,
+                  pctDetail: `${worldPlaces.length} / 195`,
+                  accentColor: "#67e8f9",
+                  items: worldPlaces.map(p => p.place_name),
+                  gradient: "linear-gradient(135deg,#7dd3fc,#06b6d4)",
+                  glow: "rgba(6,182,212,0.55)",
+                  border: "rgba(6,182,212,0.22)",
+                  bg: "rgba(6,182,212,0.07)",
+                },
+                {
+                  value: tab === "country" ? countryPlaces.length : allCountryRows.length,
+                  label: tab === "country" ? "States / cities" : "Cities & regions",
+                  pct: cityPct,
+                  pctDetail: stateTotal && tab === "country" ? `${countryPlaces.length} / ${stateTotal} states` : null,
+                  accentColor: "#fcd34d",
+                  items: allCountryRows.map(p => p.place_name),
+                  gradient: "linear-gradient(135deg,#fcd34d,#f97316)",
+                  glow: "rgba(249,115,22,0.55)",
+                  border: "rgba(249,115,22,0.22)",
+                  bg: "rgba(249,115,22,0.07)",
+                },
+                {
+                  value: totalPlaces,
+                  label: "Total pins",
+                  pct: null,
+                  pctDetail: null,
+                  accentColor: "#d8b4fe",
+                  items: [...worldPlaces, ...allCountryRows].map(p => p.place_name),
+                  gradient: "linear-gradient(135deg,#d8b4fe,#a855f7)",
+                  glow: "rgba(168,85,247,0.55)",
+                  border: "rgba(168,85,247,0.22)",
+                  bg: "rgba(168,85,247,0.07)",
+                },
+              ].map(({ value, label, pct, pctDetail, accentColor, items, gradient, glow, border, bg }) => (
                 <div
                   key={label}
-                  className="flex flex-col items-center gap-1.5 rounded-2xl py-5 text-center backdrop-blur-xl"
+                  className="flex flex-col items-center gap-1 rounded-2xl py-5 text-center backdrop-blur-xl"
                   style={{
                     background: bg,
                     border: `1px solid ${border}`,
@@ -918,10 +957,23 @@ export default function Home() {
                     {value}
                   </p>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{label}</p>
+                  {pct !== null ? (
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
+                        style={{ background: `${accentColor}22`, color: accentColor }}
+                      >
+                        {pct}%
+                      </span>
+                      {pctDetail ? (
+                        <span className="text-[9px] text-slate-600">{pctDetail}</span>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {value > 0 ? (
                     <button
                       onClick={() => setListModal({ title: label, items })}
-                      className="mt-0.5 text-[9px] text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
+                      className="mt-1 text-[9px] text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
                     >
                       view list
                     </button>
