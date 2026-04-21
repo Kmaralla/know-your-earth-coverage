@@ -69,6 +69,13 @@ function Pill({
 }
 
 const CARD = "rounded-2xl border border-white/[0.13] bg-white/[0.06] backdrop-blur-xl";
+
+/** Convert ISO country code → flag emoji (e.g. "US" → 🇺🇸) */
+function flag(code: string) {
+  return code.toUpperCase().split("").map((c) =>
+    String.fromCodePoint(c.charCodeAt(0) - 65 + 0x1F1E6)
+  ).join("");
+}
 const INPUT =
   "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/60";
 const BTN_GHOST =
@@ -900,91 +907,47 @@ export default function Home() {
           {/* ── RIGHT PANEL ── */}
           <section className="flex flex-col gap-3">
 
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                {
-                  value: worldPlaces.length,
-                  label: "Countries",
-                  pct: worldPct,
-                  pctDetail: `${worldPlaces.length} / 195`,
-                  accentColor: "#67e8f9",
-                  items: worldPlaces.map(p => p.place_name),
-                  gradient: "linear-gradient(135deg,#7dd3fc,#06b6d4)",
-                  glow: "rgba(6,182,212,0.55)",
-                  border: "rgba(6,182,212,0.22)",
-                  bg: "rgba(6,182,212,0.07)",
-                },
-                {
-                  value: tab === "country" ? countryPlaces.length : allCountryRows.length,
-                  label: tab === "country" ? `${currentCountryName} states` : "Cities & regions",
-                  pct: tab === "country" ? cityPctCountry : null,
-                  pctDetail: tab === "country" ? cityPctDetail : null,
-                  accentColor: "#fcd34d",
-                  items: allCountryRows.map(p => p.place_name),
-                  gradient: "linear-gradient(135deg,#fcd34d,#f97316)",
-                  glow: "rgba(249,115,22,0.55)",
-                  border: "rgba(249,115,22,0.22)",
-                  bg: "rgba(249,115,22,0.07)",
-                },
-                {
-                  value: totalPlaces,
-                  label: "Total pins",
-                  pct: null,
-                  pctDetail: null,
-                  accentColor: "#d8b4fe",
-                  items: [...worldPlaces, ...allCountryRows].map(p => p.place_name),
-                  gradient: "linear-gradient(135deg,#d8b4fe,#a855f7)",
-                  glow: "rgba(168,85,247,0.55)",
-                  border: "rgba(168,85,247,0.22)",
-                  bg: "rgba(168,85,247,0.07)",
-                },
-              ].map(({ value, label, pct, pctDetail, accentColor, items, gradient, glow, border, bg }) => (
-                <div
-                  key={label}
-                  className="flex flex-col items-center gap-1 rounded-2xl py-5 text-center backdrop-blur-xl"
-                  style={{
-                    background: bg,
-                    border: `1px solid ${border}`,
-                    boxShadow: `0 0 30px ${glow.replace("0.55","0.12")}, inset 0 1px 0 ${border}`,
-                  }}
-                >
+            {/* Total pins — always visible summary bar */}
+            <div
+              className={`${CARD} flex items-center justify-between px-5 py-4`}
+              style={{ boxShadow: "0 0 28px rgba(168,85,247,0.10), inset 0 1px 0 rgba(168,85,247,0.18)" }}
+            >
+              <div className="flex items-center gap-5">
+                <div>
                   <p
-                    className="text-5xl font-black tabular-nums leading-none"
+                    className="text-4xl font-black tabular-nums leading-none"
                     style={{
-                      background: gradient,
+                      background: "linear-gradient(135deg,#d8b4fe,#a855f7)",
                       WebkitBackgroundClip: "text",
                       WebkitTextFillColor: "transparent",
                       backgroundClip: "text",
-                      filter: `drop-shadow(0 0 14px ${glow})`,
+                      filter: "drop-shadow(0 0 12px rgba(168,85,247,0.55))",
                     }}
                   >
-                    {value}
+                    {totalPlaces}
                   </p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">{label}</p>
-                  {pct !== null ? (
-                    <div className="mt-0.5 flex items-center gap-1.5">
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums"
-                        style={{ background: `${accentColor}22`, color: accentColor }}
-                      >
-                        {pct}%
-                      </span>
-                      {pctDetail ? (
-                        <span className="text-[9px] text-slate-600">{pctDetail}</span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {value > 0 ? (
-                    <button
-                      onClick={() => setListModal({ title: label, items })}
-                      className="mt-1 text-[9px] text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
-                    >
-                      view list
-                    </button>
-                  ) : null}
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Total pins</p>
                 </div>
-              ))}
+                <div className="h-9 w-px bg-white/10" />
+                <div className="flex gap-5">
+                  <div>
+                    <p className="text-2xl font-black tabular-nums leading-none" style={{ color: "#22d3ee", filter: "drop-shadow(0 0 8px rgba(6,182,212,0.5))" }}>{worldPlaces.length}</p>
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">countries</p>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black tabular-nums leading-none" style={{ color: "#fbbf24", filter: "drop-shadow(0 0 8px rgba(251,191,36,0.5))" }}>{allCountryRows.length}</p>
+                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">cities</p>
+                  </div>
+                </div>
+              </div>
+              {totalPlaces > 0 ? (
+                <button
+                  onClick={() => setListModal({ title: "All pins", items: [...worldPlaces, ...allCountryRows].map(p => p.place_name) })}
+                  className="text-xs text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
+                >
+                  view all
+                </button>
+              ) : null}
             </div>
 
             {/* Controls card */}
@@ -1026,6 +989,55 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* ── World coverage stat ── */}
+              {tab === "world" ? (
+                <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">🌍 World coverage</p>
+                      <div className="mt-1.5 flex items-baseline gap-2.5">
+                        <span
+                          className="text-4xl font-black tabular-nums leading-none"
+                          style={{ background: "linear-gradient(135deg,#7dd3fc,#06b6d4)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 0 10px rgba(6,182,212,0.55))" }}
+                        >
+                          {worldPct}%
+                        </span>
+                        <span className="text-sm text-slate-400">
+                          {worldPlaces.length} of 195 countries explored
+                        </span>
+                      </div>
+                    </div>
+                    {worldPlaces.length > 0 ? (
+                      <button
+                        onClick={() => setListModal({ title: "Countries visited", items: worldPlaces.map(p => p.place_name) })}
+                        className="flex-shrink-0 text-[10px] text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
+                      >
+                        view list
+                      </button>
+                    ) : null}
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
+                    <div
+                      className="h-1.5 rounded-full transition-all duration-700"
+                      style={{ width: `${Math.max(worldPct, worldPlaces.length > 0 ? 0.5 : 0)}%`, background: "linear-gradient(90deg,#0891b2,#22d3ee)" }}
+                    />
+                  </div>
+                  {/* Country flags */}
+                  {worldPlaces.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {worldPlaces.map(p => (
+                        <span key={p.country_code} className="text-xl leading-none" title={p.place_name}>
+                          {flag(p.country_code)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-700">Search a country or click the map to start</p>
+                  )}
+                </div>
+              ) : null}
+
               {/* Country selector */}
               {tab === "country" ? (
                 <>
@@ -1057,6 +1069,77 @@ export default function Home() {
                       ))}
                     </div>
                   ) : null}
+
+                  {/* ── Country coverage stat ── */}
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                          {flag(countryCode)} {currentCountryName}
+                        </p>
+                        <div className="mt-1.5 flex items-baseline gap-2.5">
+                          {cityPctCountry !== null ? (
+                            <>
+                              <span
+                                className="text-4xl font-black tabular-nums leading-none"
+                                style={{ background: "linear-gradient(135deg,#fcd34d,#f97316)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", filter: "drop-shadow(0 0 10px rgba(251,146,60,0.55))" }}
+                              >
+                                {cityPctCountry}%
+                              </span>
+                              <span className="text-sm text-slate-400">
+                                {countryPlaces.length} of {stateTotal} states explored
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <span
+                                className="text-4xl font-black tabular-nums leading-none"
+                                style={{ background: "linear-gradient(135deg,#fcd34d,#f97316)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
+                              >
+                                {countryPlaces.length}
+                              </span>
+                              <span className="text-sm text-slate-400">
+                                {countryPlaces.length === 1 ? "city/region" : "cities/regions"} pinned
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {countryPlaces.length > 0 ? (
+                        <button
+                          onClick={() => setListModal({ title: `${currentCountryName} places`, items: countryPlaces.map(p => p.place_name) })}
+                          className="flex-shrink-0 text-[10px] text-slate-600 underline underline-offset-2 transition-colors hover:text-slate-400"
+                        >
+                          view list
+                        </button>
+                      ) : null}
+                    </div>
+                    {/* Progress bar — only when we have state count data */}
+                    {cityPctCountry !== null ? (
+                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
+                        <div
+                          className="h-1.5 rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(cityPctCountry, 100)}%`, background: "linear-gradient(90deg,#d97706,#fbbf24)" }}
+                        />
+                      </div>
+                    ) : null}
+                    {/* Pinned places as chips */}
+                    {countryPlaces.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {countryPlaces.map(p => (
+                          <span
+                            key={p.place_name}
+                            className="rounded-full px-2.5 py-0.5 text-[11px] font-medium text-amber-200"
+                            style={{ background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.2)" }}
+                          >
+                            {p.place_name.split(",")[0]}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-700">Search a city or click the map to start</p>
+                    )}
+                  </div>
                 </>
               ) : null}
 
