@@ -518,9 +518,27 @@ export default function Home() {
   const totalPlaces = worldPlaces.length + allCountryRows.length;
   const worldPct = Math.round(worldPlaces.length / 195 * 100);
   const stateTotal = COUNTRY_STATE_COUNTS[countryCode];
-  const cityPct = tab === "country" && stateTotal && countryPlaces.length > 0
-    ? Math.round(countryPlaces.length / stateTotal * 100)
+
+  // World tab: % = pins / sum of state counts across every visited country
+  const visitedStateTotals = worldPlaces.reduce(
+    (sum, p) => sum + (COUNTRY_STATE_COUNTS[p.country_code] ?? 0), 0,
+  );
+  const cityPctWorld = visitedStateTotals > 0 && allCountryRows.length > 0
+    ? Math.round((allCountryRows.length / visitedStateTotals) * 100)
     : null;
+
+  // Country tab: % = pins in current country / total states in that country
+  const cityPctCountry = stateTotal && countryPlaces.length > 0
+    ? Math.round((countryPlaces.length / stateTotal) * 100)
+    : null;
+
+  const cityPct = tab === "country" ? cityPctCountry : cityPctWorld;
+  const cityPctDetail =
+    tab === "country" && stateTotal
+      ? `${countryPlaces.length} / ${stateTotal} states`
+      : visitedStateTotals > 0
+        ? `${allCountryRows.length} / ${visitedStateTotals} states`
+        : null;
 
   return (
     <div
@@ -911,10 +929,10 @@ export default function Home() {
                   bg: "rgba(6,182,212,0.07)",
                 },
                 {
-                  value: tab === "country" ? countryPlaces.length : allCountryRows.length,
+                  value: allCountryRows.length,
                   label: tab === "country" ? "States / cities" : "Cities & regions",
                   pct: cityPct,
-                  pctDetail: stateTotal && tab === "country" ? `${countryPlaces.length} / ${stateTotal} states` : null,
+                  pctDetail: cityPctDetail,
                   accentColor: "#fcd34d",
                   items: allCountryRows.map(p => p.place_name),
                   gradient: "linear-gradient(135deg,#fcd34d,#f97316)",
