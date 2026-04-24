@@ -76,6 +76,15 @@ function flag(code: string) {
     String.fromCodePoint(c.charCodeAt(0) - 65 + 0x1F1E6)
   ).join("");
 }
+
+/** Rough default zoom level for a country by size */
+function countryZoom(code: string): number {
+  const large = new Set(["RU","CA","US","BR","AU","CN","IN","AR","KZ","DZ","SA","MX","ID","LY","IR","MN","PE","ET","AO","ML","ZA","CO","CD","SD"]);
+  const small = new Set(["SG","MT","MV","BH","QA","KW","LB","CY","LU","EE","LV","LT","AL","ME","MK","SI","BA","MD","AM","AZ","GE","TW","RW","UG"]);
+  if (large.has(code)) return 3;
+  if (small.has(code)) return 7;
+  return 5;
+}
 const INPUT =
   "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/60";
 const BTN_GHOST =
@@ -118,6 +127,7 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [listModal, setListModal] = useState<{ title: string; items: string[] } | null>(null);
   const hasDefaultedCountry = useRef(false);
+  const countryPlacesRef = useRef<PlaceEntry[]>([]);
   const [friends, setFriends] = useState<Profile[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
@@ -155,7 +165,9 @@ export default function Home() {
   );
 
   useEffect(() => {
-    setCountryPlaces(allCountryRows.filter((r) => r.country_code === countryCode));
+    const filtered = allCountryRows.filter((r) => r.country_code === countryCode);
+    setCountryPlaces(filtered);
+    countryPlacesRef.current = filtered;
   }, [allCountryRows, countryCode]);
 
   const loadIncoming = useCallback(
@@ -282,19 +294,32 @@ export default function Home() {
   useEffect(() => {
     if (!mapRef.current) return;
     if (tab === "country") {
-      const c = COUNTRIES.find((c) => c.code === countryCode);
-      if (c) mapRef.current.flyTo({ center: [c.lng, c.lat], zoom: 4, duration: 1200 });
+      const places = countryPlacesRef.current;
+      const c = COUNTRIES.find((x) => x.code === countryCode);
+      if (places.length >= 2) {
+        const lngs = places.map(p => p.lng);
+        const lats = places.map(p => p.lat);
+        mapRef.current.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 80, duration: 1200, maxZoom: 8 },
+        );
+      } else if (c) {
+        mapRef.current.flyTo({ center: [c.lng, c.lat], zoom: countryZoom(c.code), duration: 1200 });
+      }
     } else {
       mapRef.current.flyTo({ ...WORLD_VIEW, duration: 1200 });
     }
   }, [tab, countryCode]);
 
-  // Default country tab to first country that has world pins
+  // Default country tab to the country with the most city pins
   useEffect(() => {
-    if (hasDefaultedCountry.current || worldPlaces.length === 0) return;
+    if (hasDefaultedCountry.current || allCountryRows.length === 0) return;
     hasDefaultedCountry.current = true;
-    setCountryCode(worldPlaces[0].country_code);
-  }, [worldPlaces]);
+    const counts: Record<string, number> = {};
+    for (const r of allCountryRows) counts[r.country_code] = (counts[r.country_code] ?? 0) + 1;
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (best) setCountryCode(best[0]);
+  }, [allCountryRows]);
 
   // Realtime presence — track who's online
   useEffect(() => {
@@ -329,8 +354,17 @@ export default function Home() {
   function resetMapView() {
     if (!mapRef.current) return;
     if (tab === "country") {
-      const c = COUNTRIES.find((c) => c.code === countryCode);
-      if (c) mapRef.current.flyTo({ center: [c.lng, c.lat], zoom: 4, duration: 800 });
+      if (countryPlaces.length >= 2) {
+        const lngs = countryPlaces.map(p => p.lng);
+        const lats = countryPlaces.map(p => p.lat);
+        mapRef.current.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 80, duration: 800, maxZoom: 8 },
+        );
+      } else {
+        const c = COUNTRIES.find((x) => x.code === countryCode);
+        if (c) mapRef.current.flyTo({ center: [c.lng, c.lat], zoom: countryZoom(c.code), duration: 800 });
+      }
     } else {
       mapRef.current.flyTo({ ...WORLD_VIEW, duration: 800 });
     }
@@ -1051,20 +1085,21 @@ export default function Home() {
                     ))}
                   </select>
                   {worldPlaces.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="self-center text-[10px] font-semibold uppercase tracking-widest text-slate-600">Quick jump:</span>
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+                      <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-widest text-slate-600">Jump:</span>
                       {worldPlaces.map((p) => (
                         <button
                           key={p.country_code}
                           onClick={() => setCountryCode(p.country_code)}
-                          className="rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors"
+                          title={p.place_name}
+                          className="flex-shrink-0 rounded-full px-1.5 py-0.5 text-lg leading-none transition-all"
                           style={
                             countryCode === p.country_code
-                              ? { background: "rgba(6,182,212,0.2)", border: "1px solid rgba(6,182,212,0.4)", color: "#67e8f9" }
-                              : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }
+                              ? { background: "rgba(6,182,212,0.2)", border: "1px solid rgba(6,182,212,0.4)", boxShadow: "0 0 8px rgba(6,182,212,0.3)" }
+                              : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }
                           }
                         >
-                          {p.place_name.split(",")[0]}
+                          {flag(p.country_code)}
                         </button>
                       ))}
                     </div>
@@ -1123,22 +1158,9 @@ export default function Home() {
                         />
                       </div>
                     ) : null}
-                    {/* Pinned places as chips */}
-                    {countryPlaces.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {countryPlaces.map(p => (
-                          <span
-                            key={p.place_name}
-                            className="rounded-full px-2.5 py-0.5 text-[11px] font-medium text-amber-200"
-                            style={{ background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.2)" }}
-                          >
-                            {p.place_name.split(",")[0]}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
+                    {countryPlaces.length === 0 ? (
                       <p className="mt-2 text-xs text-slate-700">Search a city or click the map to start</p>
-                    )}
+                    ) : null}
                   </div>
                 </>
               ) : null}
@@ -1181,7 +1203,7 @@ export default function Home() {
 
               {/* Chips */}
               {isOwnView ? (
-                <div className="flex min-h-6 flex-wrap gap-1.5">
+                <div className="flex min-h-6 gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
                   {activePlaces.length === 0 ? (
                     <p className="text-xs text-slate-700">Nothing added yet — search above or click the map</p>
                   ) : (
@@ -1190,7 +1212,7 @@ export default function Home() {
                         if (tab === "world") setWorldPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
                         else setCountryPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
                       }}>
-                        {p.place_name}
+                        {p.place_name.split(",")[0]}
                       </Pill>
                     ))
                   )}
@@ -1202,7 +1224,7 @@ export default function Home() {
             <div
               className="relative overflow-hidden rounded-2xl"
               style={{
-                height: 480,
+                height: 540,
                 border: "1px solid rgba(6,182,212,0.25)",
                 boxShadow: "0 0 50px rgba(6,182,212,0.10), 0 0 0 1px rgba(6,182,212,0.06)",
               }}
