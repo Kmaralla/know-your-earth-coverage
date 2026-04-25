@@ -10,4 +10,5 @@ export type PlaceEntry = {
   place_name: string;
   lat: number;
   lng: number;
+  state_name?: string;
 };

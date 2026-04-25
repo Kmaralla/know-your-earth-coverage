@@ -6,6 +6,7 @@ export type NominatimResult = {
   address: {
     country_code?: string;
     country?: string;
+    state?: string;
   };
 };
 

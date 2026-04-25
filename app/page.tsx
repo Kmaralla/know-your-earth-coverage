@@ -128,6 +128,7 @@ export default function Home() {
   const [listModal, setListModal] = useState<{ title: string; items: string[] } | null>(null);
   const hasDefaultedCountry = useRef(false);
   const countryPlacesRef = useRef<PlaceEntry[]>([]);
+  const geocodedRef = useRef<Set<string>>(new Set());
   const [friends, setFriends] = useState<Profile[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
@@ -142,7 +143,7 @@ export default function Home() {
     async (ownerId: string) => {
       const [{ data: world }, { data: country }] = await Promise.all([
         supabase.from("coverage_world").select("country_code,place_name,lat,lng").eq("user_id", ownerId),
-        supabase.from("coverage_country").select("country_code,place_name,lat,lng").eq("user_id", ownerId),
+        supabase.from("coverage_country").select("country_code,place_name,lat,lng,state_name").eq("user_id", ownerId),
       ]);
       setWorldPlaces(
         (world ?? []).filter((r) => r.lat != null).map((r) => ({
@@ -158,6 +159,7 @@ export default function Home() {
           place_name: r.place_name,
           lat: r.lat,
           lng: r.lng,
+          state_name: r.state_name ?? undefined,
         })),
       );
     },
@@ -169,6 +171,44 @@ export default function Home() {
     setCountryPlaces(filtered);
     countryPlacesRef.current = filtered;
   }, [allCountryRows, countryCode]);
+
+  // On-demand: reverse-geocode existing country places that are missing state_name
+  useEffect(() => {
+    if (tab !== "country" || !user) return;
+    const missing = countryPlaces.filter(
+      (p) => !p.state_name && !geocodedRef.current.has(`${p.lat},${p.lng}`),
+    );
+    if (missing.length === 0) return;
+    missing.forEach((p) => geocodedRef.current.add(`${p.lat},${p.lng}`));
+    let cancelled = false;
+    const run = async () => {
+      for (const place of missing) {
+        if (cancelled) break;
+        const result = await reverseGeocode(place.lat, place.lng);
+        if (cancelled) break;
+        const sn = result?.address.state;
+        if (sn) {
+          setCountryPlaces((prev) =>
+            prev.map((p) => (p.lat === place.lat && p.lng === place.lng ? { ...p, state_name: sn } : p)),
+          );
+          setAllCountryRows((prev) =>
+            prev.map((p) => (p.lat === place.lat && p.lng === place.lng ? { ...p, state_name: sn } : p)),
+          );
+          await supabase
+            .from("coverage_country")
+            .update({ state_name: sn })
+            .eq("user_id", user.id)
+            .eq("country_code", place.country_code)
+            .eq("place_name", place.place_name);
+        }
+        await new Promise((r) => setTimeout(r, 1100));
+      }
+    };
+    void run();
+    return () => { cancelled = true; };
+  // countryPlaces intentionally omitted — geocodedRef prevents re-running for same places
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, countryCode, user, supabase]);
 
   const loadIncoming = useCallback(
     async (userId: string) => {
@@ -387,7 +427,10 @@ export default function Home() {
       const a = result.address;
       const name = a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.state_district ?? a.state ?? result.display_name.split(",")[0];
       if (!name) return;
-      setCountryPlaces((prev) => (prev.some((p) => p.place_name === name) ? prev : [...prev, { country_code: countryCode, place_name: name, lat, lng }]));
+      setCountryPlaces((prev) => (prev.some((p) => p.place_name === name) ? prev : [...prev, { country_code: countryCode, place_name: name, lat, lng, state_name: a.state }]));
+      // Auto-add country to world view
+      const wc = COUNTRIES.find((c) => c.code === countryCode);
+      if (wc) setWorldPlaces((prev) => (prev.some((p) => p.country_code === countryCode) ? prev : [...prev, { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng }]));
     }
   }
 
@@ -417,7 +460,10 @@ export default function Home() {
     if (tab === "world") {
       setWorldPlaces((prev) => (prev.some((p) => p.place_name === placeName) ? prev : [...prev, entry]));
     } else {
-      setCountryPlaces((prev) => (prev.some((p) => p.place_name === placeName) ? prev : [...prev, { ...entry, country_code: countryCode }]));
+      setCountryPlaces((prev) => (prev.some((p) => p.place_name === placeName) ? prev : [...prev, { ...entry, country_code: countryCode, state_name: result.address.state }]));
+      // Auto-add country to world view
+      const wc = COUNTRIES.find((c) => c.code === countryCode);
+      if (wc) setWorldPlaces((prev) => (prev.some((p) => p.country_code === countryCode) ? prev : [...prev, { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng }]));
     }
     setPlaceQuery("");
     setSuggestions([]);
@@ -432,7 +478,7 @@ export default function Home() {
       await supabase.from("coverage_world").insert(worldPlaces.map((p) => ({ user_id: user.id, country_code: p.country_code, place_name: p.place_name, lat: p.lat, lng: p.lng })));
     await supabase.from("coverage_country").delete().eq("user_id", user.id).eq("country_code", countryCode);
     if (countryPlaces.length > 0)
-      await supabase.from("coverage_country").insert(countryPlaces.map((p) => ({ user_id: user.id, country_code: countryCode, place_name: p.place_name, lat: p.lat, lng: p.lng })));
+      await supabase.from("coverage_country").insert(countryPlaces.map((p) => ({ user_id: user.id, country_code: countryCode, place_name: p.place_name, lat: p.lat, lng: p.lng, state_name: p.state_name ?? null })));
     const { data } = await supabase.from("coverage_country").select("country_code,place_name,lat,lng").eq("user_id", user.id);
     setAllCountryRows((data ?? []).filter((r) => r.lat != null).map((r) => ({ country_code: r.country_code, place_name: r.place_name, lat: r.lat, lng: r.lng })));
     setInfo("Coverage saved ✓");
@@ -561,12 +607,14 @@ export default function Home() {
   const stateTotal = COUNTRY_STATE_COUNTS[countryCode];
   const currentCountryName = COUNTRIES.find((c) => c.code === countryCode)?.name ?? countryCode;
 
-  // Country tab: % of states visited in the currently selected country
+  // Country tab: unique states visited (falls back to city count for entries without state_name)
+  const visitedStates = new Set(countryPlaces.map((p) => p.state_name).filter(Boolean));
+  const effectiveStateCount = visitedStates.size > 0 ? visitedStates.size : countryPlaces.length;
   const cityPctCountry = stateTotal && countryPlaces.length > 0
-    ? Math.round((countryPlaces.length / stateTotal) * 100)
+    ? Math.round((effectiveStateCount / stateTotal) * 100)
     : null;
   const cityPctDetail = stateTotal
-    ? `${countryPlaces.length} / ${stateTotal} states`
+    ? `${effectiveStateCount} / ${stateTotal} states`
     : null;
 
   return (
@@ -1126,7 +1174,7 @@ export default function Home() {
                                 {cityPctCountry}%
                               </span>
                               <span className="text-sm text-slate-400">
-                                {countryPlaces.length} of {stateTotal} states explored
+                                {effectiveStateCount} of {stateTotal} states explored
                               </span>
                             </>
                           ) : (
