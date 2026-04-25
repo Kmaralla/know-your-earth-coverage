@@ -698,9 +698,13 @@ export default function Home() {
             Continue with magic link →
           </button>
           {info ? (
-            <p className={`text-xs ${info.includes("expired") || info.includes("error") ? "rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-amber-300" : "text-slate-500"}`}>
-              {info}
-            </p>
+            <div className={`w-full rounded-xl px-4 py-3 text-sm font-medium ${
+              info.includes("expired") || info.includes("error")
+                ? "border border-amber-500/30 bg-amber-500/10 text-amber-300"
+                : "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            }`}>
+              {!(info.includes("expired") || info.includes("error")) ? "✉️ " : "⚠ "}{info}
+            </div>
           ) : null}
           {shareHandle ? (
             <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
