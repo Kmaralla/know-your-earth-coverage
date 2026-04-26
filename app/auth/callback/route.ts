@@ -20,8 +20,15 @@ export async function GET(request: NextRequest) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return response;
+
+    // Exchange failed (e.g. link expired or already used) — tell the user clearly
+    const fail = new URL("/", origin);
+    fail.searchParams.set("auth_error", error.message ?? "link_expired");
+    return NextResponse.redirect(fail);
   }
 
-  // Code missing or exchange failed — send back to home
-  return NextResponse.redirect(new URL("/", origin));
+  // No code param at all
+  const fail = new URL("/", origin);
+  fail.searchParams.set("auth_error", "missing_code");
+  return NextResponse.redirect(fail);
 }

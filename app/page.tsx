@@ -102,6 +102,7 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [info, setInfo] = useState("");
+  const [sendCooldown, setSendCooldown] = useState(0);
 
   const [tab, setTab] = useState<Tab>("world");
   const [countryCode, setCountryCode] = useState("IN");
@@ -288,19 +289,35 @@ export default function Home() {
 
     // Show a friendly message if Supabase redirected here with an auth error
     const authError = params.get("error_code") ?? params.get("error");
+    const callbackError = params.get("auth_error");
     if (authError) {
       const desc = params.get("error_description")?.replace(/\+/g, " ") ?? authError;
       if (authError === "otp_expired") {
-        setInfo("Magic link expired — please request a new one below.");
+        setInfo("⚠ Magic link expired — please request a new one below.");
       } else {
-        setInfo(`Sign-in error: ${desc}`);
+        setInfo(`⚠ Sign-in error: ${desc}`);
       }
-      // Clean the error params from the URL so they don't persist on reload
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (callbackError) {
+      if (callbackError.toLowerCase().includes("expired") || callbackError === "link_expired") {
+        setInfo("⚠ That link has expired or was already used — request a fresh one below.");
+      } else if (callbackError === "missing_code") {
+        setInfo("⚠ Invalid sign-in link — please request a new one below.");
+      } else {
+        setInfo(`⚠ Sign-in failed: ${callbackError}`);
+      }
       window.history.replaceState({}, "", window.location.pathname);
     }
 
     void boot();
   }, [loadCoverage, loadFriends, loadIncoming, supabase]);
+
+  // Count down the send-cooldown every second
+  useEffect(() => {
+    if (sendCooldown <= 0) return;
+    const t = setInterval(() => setSendCooldown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [sendCooldown]);
 
   // Auto-load a shared profile once the user is authenticated
   useEffect(() => {
@@ -488,7 +505,7 @@ export default function Home() {
   // ── Auth ──────────────────────────────────────────────────────────
 
   async function sendMagicLink() {
-    // Build callback URL, preserving ?share= if present
+    if (sendCooldown > 0 || !email.trim()) return;
     const callbackUrl = new URL("/auth/callback", window.location.origin);
     const shareParam = new URLSearchParams(window.location.search).get("share");
     if (shareParam) callbackUrl.searchParams.set("next", `/?share=${shareParam}`);
@@ -496,7 +513,17 @@ export default function Home() {
       email,
       options: { emailRedirectTo: callbackUrl.toString() },
     });
-    setInfo(error ? error.message : "Magic link sent — check your inbox.");
+    if (error) {
+      const msg = error.message ?? "";
+      if (msg.toLowerCase().includes("rate") || msg.toLowerCase().includes("limit")) {
+        setInfo("⚠ Too many requests — please wait a few minutes before trying again. Check your spam folder in the meantime.");
+      } else {
+        setInfo(`⚠ ${msg}`);
+      }
+    } else {
+      setInfo("✉ Magic link sent — check your inbox (and spam folder).");
+      setSendCooldown(60);
+    }
   }
 
   async function logout() {
@@ -742,8 +769,12 @@ export default function Home() {
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void sendMagicLink(); }}
           />
-          <button className={`${BTN_PRIMARY} w-full py-3`} onClick={sendMagicLink}>
-            Continue with magic link →
+          <button
+            className={`${BTN_PRIMARY} w-full py-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100`}
+            onClick={sendMagicLink}
+            disabled={sendCooldown > 0}
+          >
+            {sendCooldown > 0 ? `Resend in ${sendCooldown}s…` : "Continue with magic link →"}
           </button>
           {info ? (
             <div className={`w-full rounded-xl px-4 py-3 text-sm font-medium ${
