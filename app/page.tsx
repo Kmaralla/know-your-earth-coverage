@@ -10,6 +10,7 @@ import type { Profile, PlaceEntry } from "@/lib/types";
 
 type Tab = "world" | "country";
 type IncomingRequest = { id: number; sender_id: string; sender: Profile[] | Profile | null };
+type Group = { id: string; name: string; created_by: string; members: Profile[] };
 
 const MAP_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 const missingSupabaseEnv =
@@ -132,6 +133,13 @@ export default function Home() {
   const geocodedRef = useRef<Set<string>>(new Set());
   const [friends, setFriends] = useState<Profile[]>([]);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [pendingGroupMembers, setPendingGroupMembers] = useState<Profile[]>([]);
+  const [groupSearch, setGroupSearch] = useState("");
+  const [groupSearchResults, setGroupSearchResults] = useState<Profile[]>([]);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   const isLoggedIn = Boolean(user);
   const isOwnView = selectedProfile ? selectedProfile.id === user?.id : true;
@@ -252,6 +260,39 @@ export default function Home() {
     [supabase],
   );
 
+  const loadGroups = useCallback(
+    async (userId: string) => {
+      const { data: myGroups } = await supabase
+        .from("group_members")
+        .select("group_id")
+        .eq("user_id", userId);
+      const ids = (myGroups ?? []).map((r) => r.group_id as string);
+      if (!ids.length) { setGroups([]); return; }
+      const [{ data: gRows }, { data: mRows }] = await Promise.all([
+        supabase.from("groups").select("id,name,created_by").in("id", ids),
+        supabase.from("group_members").select("group_id,user_id").in("group_id", ids),
+      ]);
+      const allUserIds = [...new Set((mRows ?? []).map((r) => r.user_id as string))];
+      const { data: profileRows } = await supabase
+        .from("profiles")
+        .select("id,handle,display_name,description")
+        .in("id", allUserIds);
+      const pm = new Map((profileRows ?? []).map((p) => [p.id, p as Profile]));
+      setGroups(
+        (gRows ?? []).map((g) => ({
+          id: g.id as string,
+          name: g.name as string,
+          created_by: g.created_by as string,
+          members: (mRows ?? [])
+            .filter((m) => m.group_id === g.id)
+            .map((m) => pm.get(m.user_id as string))
+            .filter((p): p is Profile => Boolean(p)),
+        }))
+      );
+    },
+    [supabase],
+  );
+
   useEffect(() => {
     const boot = async () => {
       const { data } = await supabase.auth.getUser();
@@ -281,6 +322,7 @@ export default function Home() {
       await loadCoverage(loggedUser.id);
       await loadIncoming(loggedUser.id);
       await loadFriends(loggedUser.id);
+      await loadGroups(loggedUser.id);
     };
     // Read URL params
     const params = new URLSearchParams(window.location.search);
@@ -310,7 +352,7 @@ export default function Home() {
     }
 
     void boot();
-  }, [loadCoverage, loadFriends, loadIncoming, supabase]);
+  }, [loadCoverage, loadFriends, loadGroups, loadIncoming, supabase]);
 
   // Count down the send-cooldown every second
   useEffect(() => {
@@ -439,15 +481,28 @@ export default function Home() {
       if (!name || !iso) return;
       const known = COUNTRIES.find((c) => c.code === iso);
       const entry: PlaceEntry = { country_code: iso, place_name: name, lat: known?.lat ?? lat, lng: known?.lng ?? lng };
-      setWorldPlaces((prev) => (prev.some((p) => p.country_code === iso) ? prev : [...prev, entry]));
+      if (!worldPlaces.some((p) => p.country_code === iso)) {
+        setWorldPlaces((prev) => [...prev, entry]);
+        persistAddWorld(entry);
+      }
     } else {
       const a = result.address;
       const name = a.city ?? a.town ?? a.village ?? a.suburb ?? a.county ?? a.state_district ?? a.state ?? result.display_name.split(",")[0];
       if (!name) return;
-      setCountryPlaces((prev) => (prev.some((p) => p.place_name === name) ? prev : [...prev, { country_code: countryCode, place_name: name, lat, lng, state_name: a.state }]));
+      if (!countryPlaces.some((p) => p.place_name === name)) {
+        const newEntry: PlaceEntry = { country_code: countryCode, place_name: name, lat, lng, state_name: a.state };
+        setCountryPlaces((prev) => [...prev, newEntry]);
+        persistAddCountry(newEntry);
+      }
       // Auto-add country to world view
-      const wc = COUNTRIES.find((c) => c.code === countryCode);
-      if (wc) setWorldPlaces((prev) => (prev.some((p) => p.country_code === countryCode) ? prev : [...prev, { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng }]));
+      if (!worldPlaces.some((p) => p.country_code === countryCode)) {
+        const wc = COUNTRIES.find((c) => c.code === countryCode);
+        if (wc) {
+          const worldEntry: PlaceEntry = { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng };
+          setWorldPlaces((prev) => [...prev, worldEntry]);
+          persistAddWorld(worldEntry);
+        }
+      }
     }
   }
 
@@ -475,31 +530,52 @@ export default function Home() {
       lng: parseFloat(result.lon),
     };
     if (tab === "world") {
-      setWorldPlaces((prev) => (prev.some((p) => p.place_name === placeName) ? prev : [...prev, entry]));
+      if (!worldPlaces.some((p) => p.place_name === placeName)) {
+        setWorldPlaces((prev) => [...prev, entry]);
+        persistAddWorld(entry);
+      }
     } else {
-      setCountryPlaces((prev) => (prev.some((p) => p.place_name === placeName) ? prev : [...prev, { ...entry, country_code: countryCode, state_name: result.address.state }]));
+      const newEntry: PlaceEntry = { ...entry, country_code: countryCode, state_name: result.address.state };
+      if (!countryPlaces.some((p) => p.place_name === placeName)) {
+        setCountryPlaces((prev) => [...prev, newEntry]);
+        persistAddCountry(newEntry);
+      }
       // Auto-add country to world view
-      const wc = COUNTRIES.find((c) => c.code === countryCode);
-      if (wc) setWorldPlaces((prev) => (prev.some((p) => p.country_code === countryCode) ? prev : [...prev, { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng }]));
+      if (!worldPlaces.some((p) => p.country_code === countryCode)) {
+        const wc = COUNTRIES.find((c) => c.code === countryCode);
+        if (wc) {
+          const worldEntry: PlaceEntry = { country_code: countryCode, place_name: wc.name, lat: wc.lat, lng: wc.lng };
+          setWorldPlaces((prev) => [...prev, worldEntry]);
+          persistAddWorld(worldEntry);
+        }
+      }
     }
     setPlaceQuery("");
     setSuggestions([]);
   }
 
-  // ── Save ──────────────────────────────────────────────────────────
+  // ── Auto-save helpers (fire-and-forget per operation) ─────────────
 
-  async function saveCoverage() {
+  function persistAddWorld(entry: PlaceEntry) {
     if (!user) return;
-    await supabase.from("coverage_world").delete().eq("user_id", user.id);
-    if (worldPlaces.length > 0)
-      await supabase.from("coverage_world").insert(worldPlaces.map((p) => ({ user_id: user.id, country_code: p.country_code, place_name: p.place_name, lat: p.lat, lng: p.lng })));
-    await supabase.from("coverage_country").delete().eq("user_id", user.id).eq("country_code", countryCode);
-    if (countryPlaces.length > 0)
-      await supabase.from("coverage_country").insert(countryPlaces.map((p) => ({ user_id: user.id, country_code: countryCode, place_name: p.place_name, lat: p.lat, lng: p.lng, state_name: p.state_name ?? null })));
-    const { data } = await supabase.from("coverage_country").select("country_code,place_name,lat,lng").eq("user_id", user.id);
-    setAllCountryRows((data ?? []).filter((r) => r.lat != null).map((r) => ({ country_code: r.country_code, place_name: r.place_name, lat: r.lat, lng: r.lng })));
-    setInfo("Coverage saved ✓");
-    setTimeout(() => setInfo(""), 3000);
+    void supabase.from("coverage_world").insert({ user_id: user.id, country_code: entry.country_code, place_name: entry.place_name, lat: entry.lat, lng: entry.lng });
+  }
+
+  function persistRemoveWorld(country_code: string) {
+    if (!user) return;
+    void supabase.from("coverage_world").delete().eq("user_id", user.id).eq("country_code", country_code);
+  }
+
+  function persistAddCountry(entry: PlaceEntry) {
+    if (!user) return;
+    void supabase.from("coverage_country").insert({ user_id: user.id, country_code: entry.country_code, place_name: entry.place_name, lat: entry.lat, lng: entry.lng, state_name: entry.state_name ?? null });
+    setAllCountryRows((prev) => prev.some((r) => r.country_code === entry.country_code && r.place_name === entry.place_name) ? prev : [...prev, entry]);
+  }
+
+  function persistRemoveCountry(country_code: string, place_name: string) {
+    if (!user) return;
+    void supabase.from("coverage_country").delete().eq("user_id", user.id).eq("country_code", country_code).eq("place_name", place_name);
+    setAllCountryRows((prev) => prev.filter((r) => !(r.country_code === country_code && r.place_name === place_name)));
   }
 
   // ── Auth ──────────────────────────────────────────────────────────
@@ -625,6 +701,46 @@ export default function Home() {
     if (!profile) return;
     const url = `${window.location.origin}?share=${profile.handle}`;
     window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank");
+  }
+
+  // ── Groups ────────────────────────────────────────────────────────
+
+  async function searchGroupMembers(q: string) {
+    setGroupSearch(q);
+    if (q.trim().length < 2) { setGroupSearchResults([]); return; }
+    const { data } = await supabase
+      .from("profiles")
+      .select("id,handle,display_name,description")
+      .or(`display_name.ilike.%${q}%,handle.ilike.%${q}%`)
+      .limit(5);
+    setGroupSearchResults((data as Profile[]) ?? []);
+  }
+
+  async function createGroup() {
+    if (!user || !newGroupName.trim()) return;
+    const { data: g } = await supabase
+      .from("groups")
+      .insert({ name: newGroupName.trim(), created_by: user.id })
+      .select("id")
+      .single();
+    if (!g) return;
+    const memberRows = [
+      { group_id: g.id, user_id: user.id },
+      ...pendingGroupMembers.map((m) => ({ group_id: g.id, user_id: m.id })),
+    ];
+    await supabase.from("group_members").insert(memberRows);
+    setNewGroupName("");
+    setPendingGroupMembers([]);
+    setGroupSearch("");
+    setGroupSearchResults([]);
+    setShowCreateGroup(false);
+    await loadGroups(user.id);
+  }
+
+  async function deleteGroup(groupId: string) {
+    if (!user) return;
+    await supabase.from("groups").delete().eq("id", groupId).eq("created_by", user.id);
+    await loadGroups(user.id);
   }
 
   // ── Render ────────────────────────────────────────────────────────
@@ -1019,6 +1135,156 @@ export default function Home() {
                 ))}
               </div>
             ) : null}
+
+            {/* Groups */}
+            {isOwnView && isLoggedIn ? (
+              <div className={`${CARD} flex flex-col gap-3 p-4`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Groups</p>
+                  <button
+                    className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-sm text-slate-400 transition-colors hover:bg-white/[0.09] hover:text-white"
+                    onClick={() => setShowCreateGroup((v) => !v)}
+                    title="Create group"
+                  >
+                    +
+                  </button>
+                </div>
+
+                {/* Create group form */}
+                {showCreateGroup ? (
+                  <div className="flex flex-col gap-2 rounded-xl border border-white/7 bg-white/[0.03] p-3">
+                    <input
+                      className={INPUT}
+                      placeholder="Group name"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                    />
+                    <div className="relative">
+                      <input
+                        className={INPUT}
+                        placeholder="Add members by name or @handle"
+                        value={groupSearch}
+                        onChange={(e) => void searchGroupMembers(e.target.value)}
+                      />
+                      {groupSearchResults.length > 0 ? (
+                        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-white/10 bg-[#0e1017] shadow-2xl">
+                          {groupSearchResults.map((p) => (
+                            <button
+                              key={p.id}
+                              className="w-full border-b border-white/5 px-3 py-2 text-left text-xs transition-colors hover:bg-white/5 last:border-0"
+                              onClick={() => {
+                                if (!pendingGroupMembers.some((m) => m.id === p.id))
+                                  setPendingGroupMembers((prev) => [...prev, p]);
+                                setGroupSearch("");
+                                setGroupSearchResults([]);
+                              }}
+                            >
+                              <span className="font-medium text-white">{p.display_name}</span>
+                              <span className="ml-1 text-slate-500">@{p.handle}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                    {pendingGroupMembers.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {pendingGroupMembers.map((m) => (
+                          <Pill key={m.id} onRemove={() => setPendingGroupMembers((prev) => prev.filter((x) => x.id !== m.id))}>
+                            {m.display_name}
+                          </Pill>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="flex gap-2">
+                      <button className={`${BTN_PRIMARY} flex-1 py-2 text-xs`} onClick={() => void createGroup()}>
+                        Create
+                      </button>
+                      <button
+                        className={`${BTN_GHOST} text-xs`}
+                        onClick={() => {
+                          setShowCreateGroup(false);
+                          setNewGroupName("");
+                          setPendingGroupMembers([]);
+                          setGroupSearch("");
+                          setGroupSearchResults([]);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {groups.length === 0 && !showCreateGroup ? (
+                  <p className="text-center text-xs text-slate-700">No groups yet — create one above</p>
+                ) : null}
+
+                {groups.map((g) => {
+                  const onlineCount = g.members.filter((m) => onlineUserIds.has(m.id)).length;
+                  const isOwner = g.created_by === user?.id;
+                  const isExpanded = expandedGroup === g.id;
+                  return (
+                    <div key={g.id} className="rounded-xl border border-white/6 bg-white/[0.03]">
+                      <button
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+                        onClick={() => setExpandedGroup(isExpanded ? null : g.id)}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">{g.name}</span>
+                        <span className="flex items-center gap-1 text-[10px]">
+                          {onlineCount > 0 ? (
+                            <span className="flex items-center gap-1 text-emerald-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                              {onlineCount} online
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">{g.members.length} member{g.members.length !== 1 ? "s" : ""}</span>
+                          )}
+                        </span>
+                        <span className="ml-1 text-[10px] text-slate-600">{isExpanded ? "▲" : "▼"}</span>
+                      </button>
+                      {isExpanded ? (
+                        <div className="border-t border-white/5 px-3 pb-3 pt-2">
+                          <div className="flex flex-col gap-1.5">
+                            {g.members.map((m) => (
+                              <button
+                                key={m.id}
+                                className="flex items-center gap-2 rounded-lg px-1 py-1 text-left transition-colors hover:bg-white/5"
+                                onClick={() => { if (m.id !== user?.id) void selectProfile(m); }}
+                              >
+                                <div className="relative flex-shrink-0">
+                                  <Avatar name={m.display_name} className="h-7 w-7 text-[10px]" />
+                                  <span
+                                    className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2"
+                                    style={{
+                                      background: onlineUserIds.has(m.id) ? "#34d399" : "#475569",
+                                      borderColor: "#080b14",
+                                    }}
+                                  />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium text-white">{m.display_name}</p>
+                                  <p className="text-[10px] text-slate-500">
+                                    {m.id === user?.id ? "you" : onlineUserIds.has(m.id) ? "● online" : "○ offline"}
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                          {isOwner ? (
+                            <button
+                              className="mt-2 w-full text-[10px] text-slate-600 underline underline-offset-2 transition-colors hover:text-red-400"
+                              onClick={() => void deleteGroup(g.id)}
+                            >
+                              Delete group
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </aside>
 
           {/* ── RIGHT PANEL ── */}
@@ -1091,11 +1357,7 @@ export default function Home() {
                   {selectedProfile && !isOwnView ? (
                     <span className="text-xs text-slate-500">Viewing {selectedProfile.display_name}</span>
                   ) : null}
-                  {isOwnView && isLoggedIn ? (
-                    <button className={BTN_PRIMARY} onClick={saveCoverage}>
-                      Save coverage
-                    </button>
-                  ) : isOwnView && guestMode ? (
+                  {isOwnView && guestMode ? (
                     <button
                       className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 transition-colors hover:bg-cyan-500/20"
                       onClick={() => setGuestMode(false)}
@@ -1292,8 +1554,13 @@ export default function Home() {
                   ) : (
                     activePlaces.map((p) => (
                       <Pill key={`${p.place_name}-${p.lat}`} onRemove={() => {
-                        if (tab === "world") setWorldPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
-                        else setCountryPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
+                        if (tab === "world") {
+                          setWorldPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
+                          persistRemoveWorld(p.country_code);
+                        } else {
+                          setCountryPlaces((prev) => prev.filter((x) => x.place_name !== p.place_name));
+                          persistRemoveCountry(p.country_code, p.place_name);
+                        }
                       }}>
                         {p.place_name.split(",")[0]}
                       </Pill>
