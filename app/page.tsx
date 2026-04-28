@@ -277,7 +277,7 @@ export default function Home() {
         .from("profiles")
         .select("id,handle,display_name,description")
         .in("id", allUserIds);
-      const pm = new Map((profileRows ?? []).map((p) => [p.id, p as Profile]));
+      const pm = new Map<string, Profile>((profileRows ?? []).map((p) => [p.id, p as Profile]));
       setGroups(
         (gRows ?? []).map((g) => ({
           id: g.id as string,
