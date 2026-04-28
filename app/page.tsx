@@ -277,7 +277,8 @@ export default function Home() {
         .from("profiles")
         .select("id,handle,display_name,description")
         .in("id", allUserIds);
-      const pm = new Map<string, Profile>((profileRows ?? []).map((p) => [p.id, p as Profile]));
+      const pm: Record<string, Profile> = {};
+      for (const p of (profileRows ?? []) as Profile[]) pm[p.id] = p;
       setGroups(
         (gRows ?? []).map((g) => ({
           id: g.id as string,
@@ -285,7 +286,7 @@ export default function Home() {
           created_by: g.created_by as string,
           members: (mRows ?? [])
             .filter((m) => m.group_id === g.id)
-            .map((m) => pm.get(m.user_id as string))
+            .map((m) => pm[m.user_id as string])
             .filter((p): p is Profile => Boolean(p)),
         }))
       );
