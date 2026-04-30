@@ -150,15 +150,25 @@ drop policy if exists "groups_delete" on groups;
 create policy "groups_delete" on groups for delete
 using (auth.uid() = created_by);
 
+-- Security definer function breaks the recursive RLS loop:
+-- groups_select → group_members → group_members_select → auth_is_group_member → group_members (no RLS)
+create or replace function auth_is_group_member(gid uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1 from group_members
+    where group_id = gid and user_id = auth.uid()
+  );
+$$;
+
 -- Group members: any member of the group can read the member list
 drop policy if exists "group_members_select" on group_members;
 create policy "group_members_select" on group_members for select
-using (
-  exists (
-    select 1 from group_members gm2
-    where gm2.group_id = group_members.group_id and gm2.user_id = auth.uid()
-  )
-);
+using (auth_is_group_member(group_members.group_id));
 
 -- Only the group creator can add members
 drop policy if exists "group_members_insert" on group_members;
