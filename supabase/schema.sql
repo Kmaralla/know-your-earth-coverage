@@ -111,3 +111,71 @@ drop policy if exists "connections_receiver_update_status" on connections;
 create policy "connections_receiver_update_status"
 on connections for update
 using (auth.uid() = receiver_id);
+
+-- ── Groups ────────────────────────────────────────────────────────
+
+create table if not exists groups (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) >= 1),
+  created_by uuid not null references profiles (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists group_members (
+  group_id uuid not null references groups (id) on delete cascade,
+  user_id uuid not null references profiles (id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (group_id, user_id)
+);
+
+alter table groups enable row level security;
+alter table group_members enable row level security;
+
+-- Groups: creator can always see it; members can see it too
+drop policy if exists "groups_select" on groups;
+create policy "groups_select" on groups for select
+using (
+  auth.uid() = created_by
+  or exists (
+    select 1 from group_members gm
+    where gm.group_id = groups.id and gm.user_id = auth.uid()
+  )
+);
+
+drop policy if exists "groups_insert" on groups;
+create policy "groups_insert" on groups for insert
+with check (auth.uid() = created_by);
+
+drop policy if exists "groups_delete" on groups;
+create policy "groups_delete" on groups for delete
+using (auth.uid() = created_by);
+
+-- Group members: any member of the group can read the member list
+drop policy if exists "group_members_select" on group_members;
+create policy "group_members_select" on group_members for select
+using (
+  exists (
+    select 1 from group_members gm2
+    where gm2.group_id = group_members.group_id and gm2.user_id = auth.uid()
+  )
+);
+
+-- Only the group creator can add members
+drop policy if exists "group_members_insert" on group_members;
+create policy "group_members_insert" on group_members for insert
+with check (
+  exists (
+    select 1 from groups g
+    where g.id = group_members.group_id and g.created_by = auth.uid()
+  )
+);
+
+-- Group creator can remove members
+drop policy if exists "group_members_delete" on group_members;
+create policy "group_members_delete" on group_members for delete
+using (
+  exists (
+    select 1 from groups g
+    where g.id = group_members.group_id and g.created_by = auth.uid()
+  )
+);
